@@ -1,31 +1,34 @@
-# Stage 1
-FROM node:21 AS backend-builder
+# -------------------------
+# Build stage
+# -------------------------
+FROM node:21-slim AS builder
 
-# setup the working dir
 WORKDIR /app
 
-# code
+COPY package*.json ./
+
+RUN npm ci
+
 COPY . .
 
-# packages install
-RUN npm i
+RUN npm test
 
-# tests
-RUN npm run test
 
-# Stage 2
+# -------------------------
+# Production stage
+# -------------------------
 FROM node:21-slim
 
-# setup the working dir
 WORKDIR /app
 
-# copy the above stage as compressed
-COPY --from=backend-builder /app .
+ENV NODE_ENV=production
 
-COPY .env.docker .env
+COPY --from=builder /app/package*.json ./
 
-# Port
-EXPOSE 8080
+RUN npm ci --omit=dev
 
-# App
-CMD ["npm", "start"]
+COPY --from=builder /app .
+
+EXPOSE 5000
+
+CMD ["node", "server.js"]

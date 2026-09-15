@@ -1,0 +1,80 @@
+backend:
+  replicaCount: 2
+
+  image:
+    repository: 268140506627.dkr.ecr.ap-south-1.amazonaws.com/mern-cicd-dev-backend
+    tag: "1.0.0"
+    pullPolicy: IfNotPresent
+
+  service:
+    type: ClusterIP
+    port: 5000
+
+  containerPort: 5000
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+frontend:
+  replicaCount: 2
+
+  image:
+    repository: 268140506627.dkr.ecr.ap-south-1.amazonaws.com/mern-cicd-dev-frontend
+    tag: "1.0.0"
+    pullPolicy: IfNotPresent
+
+  service:
+    type: ClusterIP
+    port: 80
+
+  containerPort: 80
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+mongodb:
+  image:
+    repository: mongo
+    tag: "6.0"
+
+  service:
+    port: 27017
+
+  storage:
+    size: 5Gi
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+
+redis:
+  replicaCount: 1
+
+  image:
+    repository: redis
+    tag: "7.0.5-alpine"
+
+  service:
+    port: 6379
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi

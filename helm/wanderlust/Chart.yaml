@@ -1,0 +1,6 @@
+apiVersion: v2
+name: wanderlust
+description: Helm chart for the Wanderlust MERN application
+type: application
+version: 0.1.0
+appVersion: "1.0.0"

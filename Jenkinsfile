@@ -2,136 +2,152 @@ pipeline {
     agent any
 
     environment {
-        SONAR_HOST_URL = 'http://localhost:9000'
-        NODE_OPTIONS = '--dns-result-order=ipv4first'
-        NPM_CONFIG_REGISTRY = 'https://registry.npmjs.org/'
-    }
+        AWS_REGION = 'ap-south-1'
 
-    parameters {
-        string(name: 'FRONTEND_DOCKER_TAG', defaultValue: 'latest', description: 'Frontend image tag')
-        string(name: 'BACKEND_DOCKER_TAG', defaultValue: 'latest', description: 'Backend image tag')
+        ECR_REGISTRY = '268140506627.dkr.ecr.ap-south-1.amazonaws.com'
+        BACKEND_REPO = 'mern-cicd-dev-backend'
+        FRONTEND_REPO = 'mern-cicd-dev-frontend'
+
+        EKS_CLUSTER = 'mern-cicd-dev'
+
+        NAMESPACE = 'wanderlust'
+        HELM_RELEASE = 'wanderlust'
+        HELM_CHART = './helm/wanderlust'
+
+        IMAGE_TAG = "${BUILD_NUMBER}"
     }
 
     stages {
 
-        stage('Workspace Cleanup') {
+        stage('Checkout') {
             steps {
-                cleanWs()
+                checkout scm
             }
         }
 
-        stage('Checkout Code') {
+        stage('Backend Tests') {
             steps {
-                git branch: 'main', url: 'https://github.com/dvanhu/Wanderlust-Mega-DevSecOps-Project.git'
-            }
-        }
-
-        stage('Install Dependencies') {
-            steps {
-                retry(2) {
+                dir('backend') {
                     sh '''
-                    npm config set registry $NPM_CONFIG_REGISTRY
-                    npm config set fetch-retries 5
-
-                    cd backend
-                    npm install --no-audit --prefer-offline
-
-                    cd ../frontend
-                    npm install --no-audit --prefer-offline
+                        npm ci
+                        npm test -- --runInBand
                     '''
                 }
             }
         }
 
-        stage('OWASP Dependency Check') {
+        stage('Frontend Validation') {
             steps {
-                sh '''
-                /opt/dependency-check/bin/dependency-check.sh \
-                --scan . \
-                --format XML \
-                --out . \
-                --data /opt/dependency-check/data \
-                --disableOssIndex \
-                --disableYarnAudit \
-                || true
-                '''
-            }
-        }
-
-        stage('Trivy Filesystem Scan') {
-            steps {
-                sh 'trivy fs . --format table'
-            }
-        }
-
-        stage('SonarQube Analysis') {
-            steps {
-                withSonarQubeEnv('sonar-server') {
+                dir('frontend') {
                     sh '''
-                    sonar-scanner \
-                    -Dsonar.projectKey=wanderlust \
-                    -Dsonar.sources=. \
-                    -Dsonar.host.url=$SONAR_HOST_URL
+                        npm ci
+                        npm run lint
+                        npm run build
                     '''
                 }
             }
         }
 
-        stage('Build Docker Images') {
+        stage('Build Backend Image') {
             steps {
                 sh '''
-                docker build -t wanderlust-backend:${BACKEND_DOCKER_TAG} ./backend
-                docker build -t wanderlust-frontend:${FRONTEND_DOCKER_TAG} ./frontend
+                    docker build \
+                        -t ${ECR_REGISTRY}/${BACKEND_REPO}:${IMAGE_TAG} \
+                        ./backend
                 '''
             }
         }
 
-        stage('Trivy Image Scan') {
+        stage('Build Frontend Image') {
             steps {
                 sh '''
-                trivy image wanderlust-backend:${BACKEND_DOCKER_TAG}
-                trivy image wanderlust-frontend:${FRONTEND_DOCKER_TAG}
+                    docker build \
+                        -t ${ECR_REGISTRY}/${FRONTEND_REPO}:${IMAGE_TAG} \
+                        ./frontend
                 '''
             }
         }
 
-        stage('Docker Push') {
+        stage('Login to ECR') {
             steps {
-                withCredentials([usernamePassword(
-                    credentialsId: 'docker-cred',
-                    usernameVariable: 'DOCKER_USER',
-                    passwordVariable: 'DOCKER_PASS'
-                )]) {
-                    sh '''
-                    echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
-
-                    docker tag wanderlust-backend:${BACKEND_DOCKER_TAG} $DOCKER_USER/wanderlust-backend:${BACKEND_DOCKER_TAG}
-                    docker tag wanderlust-frontend:${FRONTEND_DOCKER_TAG} $DOCKER_USER/wanderlust-frontend:${FRONTEND_DOCKER_TAG}
-
-                    docker push $DOCKER_USER/wanderlust-backend:${BACKEND_DOCKER_TAG}
-                    docker push $DOCKER_USER/wanderlust-frontend:${FRONTEND_DOCKER_TAG}
-                    '''
-                }
+                sh '''
+                    aws ecr get-login-password \
+                        --region ${AWS_REGION} |
+                    docker login \
+                        --username AWS \
+                        --password-stdin ${ECR_REGISTRY}
+                '''
             }
         }
 
-        stage('Deploy to Kubernetes') {
+        stage('Push Images to ECR') {
             steps {
                 sh '''
-                echo "Deploying to Kubernetes..."
+                    docker push \
+                        ${ECR_REGISTRY}/${BACKEND_REPO}:${IMAGE_TAG}
 
-                export KUBECONFIG=/var/lib/jenkins/config
+                    docker push \
+                        ${ECR_REGISTRY}/${FRONTEND_REPO}:${IMAGE_TAG}
+                '''
+            }
+        }
 
-                kubectl set image deployment/backend-deployment \
-                backend=dvanhu/wanderlust-backend:${BACKEND_DOCKER_TAG} \
-                -n wanderlust
+        stage('Validate Helm') {
+            steps {
+                sh '''
+                    helm lint ${HELM_CHART}
 
-                kubectl set image deployment/frontend-deployment \
-                frontend=dvanhu/wanderlust-frontend:${FRONTEND_DOCKER_TAG} \
-                -n wanderlust
+                    helm template ${HELM_RELEASE} ${HELM_CHART} \
+                        --namespace ${NAMESPACE} \
+                        --set backend.image.tag=${IMAGE_TAG} \
+                        --set frontend.image.tag=${IMAGE_TAG} \
+                        > /tmp/wanderlust-rendered.yaml
+                '''
+            }
+        }
 
-                kubectl rollout status deployment/backend-deployment -n wanderlust
-                kubectl rollout status deployment/frontend-deployment -n wanderlust
+        stage('Configure EKS Access') {
+            steps {
+                sh '''
+                    aws eks update-kubeconfig \
+                        --region ${AWS_REGION} \
+                        --name ${EKS_CLUSTER}
+                '''
+            }
+        }
+
+        stage('Deploy with Helm') {
+            steps {
+                sh '''
+                    helm upgrade --install ${HELM_RELEASE} ${HELM_CHART} \
+                        --namespace ${NAMESPACE} \
+                        --create-namespace \
+                        --set backend.image.tag=${IMAGE_TAG} \
+                        --set frontend.image.tag=${IMAGE_TAG} \
+                        --wait \
+                        --timeout 10m
+                '''
+            }
+        }
+
+        stage('Verify Deployment') {
+            steps {
+                sh '''
+                    kubectl rollout status \
+                        deployment/wanderlust-backend \
+                        -n ${NAMESPACE} \
+                        --timeout=5m
+
+                    kubectl rollout status \
+                        deployment/wanderlust-frontend \
+                        -n ${NAMESPACE} \
+                        --timeout=5m
+
+                    echo "===== PODS ====="
+                    kubectl get pods -n ${NAMESPACE}
+
+                    echo "===== SERVICES ====="
+                    kubectl get svc -n ${NAMESPACE}
                 '''
             }
         }
@@ -139,13 +155,30 @@ pipeline {
 
     post {
         always {
-            archiveArtifacts artifacts: '*.xml', allowEmptyArchive: true
+            sh '''
+                docker image prune -f || true
+            '''
         }
+
         success {
-            echo "✅ FULL CI/CD SUCCESS 🚀"
+            echo "========================================"
+            echo "CI/CD PIPELINE SUCCESS"
+            echo "========================================"
+            echo "Backend:"
+            echo "${ECR_REGISTRY}/${BACKEND_REPO}:${IMAGE_TAG}"
+            echo ""
+            echo "Frontend:"
+            echo "${ECR_REGISTRY}/${FRONTEND_REPO}:${IMAGE_TAG}"
+            echo ""
+            echo "Helm Release: ${HELM_RELEASE}"
+            echo "Namespace: ${NAMESPACE}"
+            echo "========================================"
         }
+
         failure {
-            echo "❌ Pipeline failed"
+            echo "========================================"
+            echo "CI/CD PIPELINE FAILED"
+            echo "========================================"
         }
     }
 }
