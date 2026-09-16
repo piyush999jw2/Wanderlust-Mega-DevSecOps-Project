@@ -1,3 +1,4 @@
+```groovy
 pipeline {
     agent any
 
@@ -27,10 +28,52 @@ pipeline {
 
         stage('Backend Tests') {
             steps {
-                dir('backend') {
+                sh '''
+                    set -e
+
+                    echo "Starting MongoDB for CI tests..."
+
+                    docker rm -f wanderlust-ci-mongo 2>/dev/null || true
+
+                    docker run -d \
+                        --name wanderlust-ci-mongo \
+                        -p 27017:27017 \
+                        mongo:6.0
+
+                    echo "Waiting for MongoDB..."
+
+                    for i in $(seq 1 30); do
+                        if docker exec wanderlust-ci-mongo \
+                            mongosh --quiet \
+                            --eval 'db.adminCommand({ ping: 1 }).ok' \
+                            | grep -q 1; then
+
+                            echo "MongoDB is ready."
+                            break
+                        fi
+
+                        if [ "$i" -eq 30 ]; then
+                            echo "MongoDB failed to become ready."
+                            docker logs wanderlust-ci-mongo
+                            exit 1
+                        fi
+
+                        sleep 2
+                    done
+
+                    cd backend
+
+                    npm ci
+
+                    MONGODB_URI="mongodb://127.0.0.1:27017/wanderlust" \
+                    npm test -- --runInBand
+                '''
+            }
+
+            post {
+                always {
                     sh '''
-                        npm ci
-                        npm test -- --runInBand
+                        docker rm -f wanderlust-ci-mongo 2>/dev/null || true
                     '''
                 }
             }
@@ -125,60 +168,5 @@ pipeline {
                         --set backend.image.tag=${IMAGE_TAG} \
                         --set frontend.image.tag=${IMAGE_TAG} \
                         --wait \
-                        --timeout 10m
-                '''
-            }
-        }
+```
 
-        stage('Verify Deployment') {
-            steps {
-                sh '''
-                    kubectl rollout status \
-                        deployment/wanderlust-backend \
-                        -n ${NAMESPACE} \
-                        --timeout=5m
-
-                    kubectl rollout status \
-                        deployment/wanderlust-frontend \
-                        -n ${NAMESPACE} \
-                        --timeout=5m
-
-                    echo "===== PODS ====="
-                    kubectl get pods -n ${NAMESPACE}
-
-                    echo "===== SERVICES ====="
-                    kubectl get svc -n ${NAMESPACE}
-                '''
-            }
-        }
-    }
-
-    post {
-        always {
-            sh '''
-                docker image prune -f || true
-            '''
-        }
-
-        success {
-            echo "========================================"
-            echo "CI/CD PIPELINE SUCCESS"
-            echo "========================================"
-            echo "Backend:"
-            echo "${ECR_REGISTRY}/${BACKEND_REPO}:${IMAGE_TAG}"
-            echo ""
-            echo "Frontend:"
-            echo "${ECR_REGISTRY}/${FRONTEND_REPO}:${IMAGE_TAG}"
-            echo ""
-            echo "Helm Release: ${HELM_RELEASE}"
-            echo "Namespace: ${NAMESPACE}"
-            echo "========================================"
-        }
-
-        failure {
-            echo "========================================"
-            echo "CI/CD PIPELINE FAILED"
-            echo "========================================"
-        }
-    }
-}
