@@ -1,4 +1,4 @@
-```groovy
+
 pipeline {
     agent any
 
@@ -168,5 +168,5 @@ pipeline {
                         --set backend.image.tag=${IMAGE_TAG} \
                         --set frontend.image.tag=${IMAGE_TAG} \
                         --wait \
-```
+
 
