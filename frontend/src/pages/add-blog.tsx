@@ -97,7 +97,7 @@ function AddBlog() {
     e.preventDefault();
     if (validateFormData()) {
       try {
-        const response = await axios.post(import.meta.env.VITE_API_PATH + '/api/posts/', formData);
+        const response = await axios.post('/api/posts/', formData);
 
         if (response.status === 200) {
           toast.success('Blog post successfully created!');
