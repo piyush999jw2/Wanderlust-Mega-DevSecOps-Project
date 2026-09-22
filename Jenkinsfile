@@ -170,8 +170,7 @@ pipeline {
                     helm template wanderlust ${HELM_CHART} \
                         --namespace ${NAMESPACE} \
                         --set backend.image.tag=${IMAGE_TAG} \
-                        --set frontend.image.tag=${IMAGE_TAG} \
-                        > /tmp/wanderlust-rendered.yaml
+                        --set frontend.image.tag=${IMAGE_TAG} 
 
                     echo "Helm validation successful."
                 '''

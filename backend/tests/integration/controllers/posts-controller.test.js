@@ -96,14 +96,35 @@ describe('Integration Tests: Get all posts by category', () => {
 });
 describe('Integration Tests: Get all featured posts', () => {
   it('Get all featured posts: Success', async () => {
+    await Post.create([
+      createPostObject({
+        title: 'Featured Test Post 1',
+        isFeaturedPost: true,
+      }),
+      createPostObject({
+        title: 'Featured Test Post 2',
+        isFeaturedPost: true,
+      }),
+    ]);
+
     const responseFeatured = await request(server).get('/api/posts/featured');
 
     expect(responseFeatured.status).toBe(HTTP_STATUS.OK);
     expect(responseFeatured.body.length).toBeGreaterThan(1);
+    expect(responseFeatured.body.every((post) => post.isFeaturedPost)).toBe(true);
   });
 });
 describe('Integration Tests: Get all latest posts', () => {
   it('Get all latest posts: Success', async () => {
+    await Post.create([
+      createPostObject({
+        title: 'Latest Test Post 1',
+      }),
+      createPostObject({
+        title: 'Latest Test Post 2',
+      }),
+    ]);
+
     const responseLatest = await request(server).get('/api/posts/latest');
 
     expect(responseLatest.status).toBe(HTTP_STATUS.OK);

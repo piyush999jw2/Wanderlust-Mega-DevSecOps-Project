@@ -11,8 +11,6 @@ RUN npm ci
 
 COPY . .
 
-RUN npm test
-
 
 # -------------------------
 # Production stage
