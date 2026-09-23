@@ -3,7 +3,7 @@ backend:
 
   image:
     repository: 268140506627.dkr.ecr.ap-south-1.amazonaws.com/mern-cicd-dev-backend
-    tag: "15"
+    tag: "16"
     pullPolicy: IfNotPresent
 
   service:
@@ -25,7 +25,7 @@ frontend:
 
   image:
     repository: 268140506627.dkr.ecr.ap-south-1.amazonaws.com/mern-cicd-dev-frontend
-    tag: "15"
+    tag: "16"
     pullPolicy: IfNotPresent
 
   service:
