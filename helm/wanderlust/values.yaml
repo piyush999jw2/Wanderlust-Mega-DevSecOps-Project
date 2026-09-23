@@ -80,3 +80,26 @@ redis:
       memory: 256Mi
 ingress:
   enabled: true
+monitoring:
+  alerts:
+    enabled: true
+
+    backend:
+      replicasUnavailable:
+        enabled: true
+        duration: 5m
+
+      podRestarting:
+        enabled: true
+        threshold: 3
+        duration: 5m
+
+    frontend:
+      replicasUnavailable:
+        enabled: true
+        duration: 5m
+
+    node:
+      down:
+        enabled: true
+        duration: 5m

@@ -1,0 +1,90 @@
+{{- if .Values.monitoring.alerts.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: wanderlust-alerts
+  labels:
+    release: monitoring
+    app.kubernetes.io/name: wanderlust
+spec:
+  groups:
+
+    - name: wanderlust-backend
+      rules:
+
+        - alert: WanderlustBackendReplicasUnavailable
+          expr: |
+            kube_deployment_status_replicas_available{
+              namespace="wanderlust",
+              deployment="wanderlust-backend"
+            }
+            <
+            kube_deployment_spec_replicas{
+              namespace="wanderlust",
+              deployment="wanderlust-backend"
+            }
+          for: {{ .Values.monitoring.alerts.backend.replicasUnavailable.duration }}
+          labels:
+            severity: critical
+            component: backend
+          annotations:
+            summary: "Wanderlust backend replicas unavailable"
+            description: "The Wanderlust backend has fewer available replicas than desired."
+
+        - alert: WanderlustBackendPodRestarting
+          expr: |
+            sum by (pod) (
+              increase(
+                kube_pod_container_status_restarts_total{
+                  namespace="wanderlust",
+                  pod=~"wanderlust-backend-.*"
+                }[10m]
+              )
+            ) > {{ .Values.monitoring.alerts.backend.podRestarting.threshold }}
+          for: {{ .Values.monitoring.alerts.backend.podRestarting.duration }}
+          labels:
+            severity: warning
+            component: backend
+          annotations:
+            summary: "Wanderlust backend pod is restarting"
+            description: "A Wanderlust backend pod has restarted more than {{ .Values.monitoring.alerts.backend.podRestarting.threshold }} times in the last 10 minutes."
+
+    - name: wanderlust-frontend
+      rules:
+
+        - alert: WanderlustFrontendReplicasUnavailable
+          expr: |
+            kube_deployment_status_replicas_available{
+              namespace="wanderlust",
+              deployment="wanderlust-frontend"
+            }
+            <
+            kube_deployment_spec_replicas{
+              namespace="wanderlust",
+              deployment="wanderlust-frontend"
+            }
+          for: {{ .Values.monitoring.alerts.frontend.replicasUnavailable.duration }}
+          labels:
+            severity: critical
+            component: frontend
+          annotations:
+            summary: "Wanderlust frontend replicas unavailable"
+            description: "The Wanderlust frontend has fewer available replicas than desired."
+
+    - name: kubernetes-node
+      rules:
+
+        - alert: KubernetesNodeDown
+          expr: |
+            kube_node_status_condition{
+              condition="Ready",
+              status="true"
+            } == 0
+          for: {{ .Values.monitoring.alerts.node.down.duration }}
+          labels:
+            severity: critical
+            component: node
+          annotations:
+            summary: "Kubernetes node is not ready"
+            description: "A Kubernetes node has been in a non-ready state for more than 5 minutes."
+{{- end }}
